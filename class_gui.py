@@ -1,10 +1,11 @@
 from tkinter import *
-from tkinter import ttk
-from tkinter import filedialog
-from tkinter import simpledialog
+from tkinter import ttk,filedialog,simpledialog,messagebox
 import random
 import datetime
 import os
+import sqlite3
+import csv
+import logging
 
 def print_vars():
     for value in vars:
@@ -66,6 +67,8 @@ class MainView(ttk.Frame):
         self.file_menu = Menu(self.menu_bar, tearoff=0)
         self.file_menu.add_command(label="Open", command=self.choose_file)
         self.file_menu.add_separator()
+        self.file_menu.add_command(label="Import Student List", command=self.import_file)
+        self.file_menu.add_separator()
         self.file_menu.add_command(label="Exit", command=self.quit)
         # add file menu to the menu bar
         self.menu_bar.add_cascade(label="File", menu=self.file_menu)
@@ -77,8 +80,27 @@ class MainView(ttk.Frame):
         # add file menu to the menu bar
         self.menu_bar.add_cascade(label="Actions", menu=self.action_menu)
 
-        self.name_list = []
-        self.check_vars = []
+
+        self.grid(row=0, column=0, padx=10, pady=10, sticky="nsew")
+        
+        # Configuring the grid to expand and center elements
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(1, weight=1)
+
+        # Add a refresh button
+        self.refresh_button = ttk.Button(self, text="Refresh", command=self.render_classes,padding=(3,5))
+        self.refresh_button.grid(row=0, column=0, padx=5, pady=5)
+        
+        # Create a frame to hold the buttons
+        self.button_frame = ttk.Frame(self)
+        self.button_frame.grid(row=1, column=0, sticky="nsew", padx=20, pady=20)
+
+        # Center the button_frame within the parent
+        self.button_frame.grid_columnconfigure(0, weight=1)
+        self.button_frame.grid_rowconfigure(0, weight=1)
+
+
+        self.render_classes()
 
         # p1 = Page1(self)
         # p2 = Page2(self)
@@ -206,6 +228,82 @@ class MainView(ttk.Frame):
             self.name_list.sort()
             self.populate_boxes()
     
+    def import_file(self):
+        file_path = filedialog.askopenfilename(
+        title="Select CSV File", 
+        filetypes=[("CSV Files", "*.csv"), ("Text Files", "*.txt")] )
+
+        if file_path:
+            if file_path.lower().endswith(".csv") or file_path.lower().endswith(".txt"):
+                self.__get_class_code(file_path)
+            else:
+                self.master.config(cursor="")
+                messagebox.showerror("File Error", "The selected file is not supported. Please choose a valid CSV or TXT file.")
+
+    def __process_file(self,filename:str,class_code):
+        if filename.lower().endswith(".csv"):
+            try:
+                conn.execute("BEGIN")
+                cur.execute("Insert INTO class (class_code) VALUES (?)", (class_code,))
+                new_id = cur.lastrowid
+                with open(filename, newline='', encoding='utf-8') as csvfile:
+                    csv_reader = csv.reader(csvfile)
+                    for row in csv_reader:
+                        name = row[0]
+                        if name:
+                            cur.execute("Insert INTO students (name,class_id) VALUES (?,?)", (name,new_id,))
+                    conn.commit()
+                    messagebox.showinfo("Success", "CSV data imported successfully!")
+                    self.render_classes()
+            except Exception as e:
+                conn.rollback()
+                messagebox.showerror("Error when importing CSV file",e)
+        else: 
+            try:
+                conn.execute("BEGIN")
+                cur.execute("Insert INTO class (class_code) VALUES (?)", (class_code,))
+                new_id = cur.lastrowid
+                with open(filename) as f:
+                    for line in f:
+                        line = line.strip()
+                        if len(line) > 0:
+                            cur.execute("Insert INTO students (name,class_id) VALUES (?,?)", (line,new_id))
+                    conn.commit()
+                    messagebox.showinfo("Success", "Text data imported successfully!")
+                    self.render_classes()
+            
+            except Exception as e:
+                conn.rollback()
+                messagebox.showerror("Error when importing text file",e)
+       
+    def __get_class_code(self,filename):
+        # root.config(cursor="watch")
+        # root.update()
+        modal = Toplevel(root)
+        modal.title("Enter class code")
+        modal.geometry("300x150")
+        label = Label(modal, text="Enter the class code name", font=("Helvetica", 12))
+        label.pack(pady=10)
+        # root.config(cursor="")
+        # root.update()
+    
+        # Entry field to capture user input
+        user_input = Entry(modal, width=30)
+        user_input.pack(pady=5)
+
+        def on_submit():
+            input_value = user_input.get()
+            if input_value:
+                modal.destroy()  # Close the modal
+                self.__process_file(filename, input_value)  # Process the file with the additional value
+            else:
+                messagebox.showwarning("Input Error", "Please enter a value.")
+    
+        # Submit button
+        submit_btn = Button(modal, text="Submit", command=on_submit)
+        submit_btn.pack(pady=10)
+
+
     def populate_boxes(self):
         self.check_vars = []
         i = 0
@@ -223,19 +321,78 @@ class MainView(ttk.Frame):
         self.pack()
         
     
-    def say_hi(self):
-        print('hi')
+    def render_classes(self):
+        cur.execute("SELECT class_code FROM class")
+        self.classes = cur.fetchall()
+
+        for widget in self.button_frame.winfo_children():
+            widget.destroy()
+
+        max_buttons_per_row = 4
+        # Font size
+        font_size = 12
+
+        # Configure the style for buttons
+        style = ttk.Style()
+        style.configure('TButton', padding=(10, 30), font=('Arial', font_size))  # Padding affects the appearance of height
+
+        # Configure the row and column configuration
+        for col in range(max_buttons_per_row):
+            self.button_frame.grid_columnconfigure(col, weight=1)
+
+        num_rows = (len(self.classes) + max_buttons_per_row - 1) // max_buttons_per_row
+        for row in range(num_rows):
+            self.button_frame.grid_rowconfigure(row, weight=0)  # Set row weight to 0 to prevent expansion
+
+        for index, item in enumerate(self.classes):
+            button = ttk.Button(self.button_frame, text=item[0], style='TButton')
+            button.bind("<Enter>", CursorUtility.on_enter)
+            button.bind("<Leave>", CursorUtility.on_leave)
+
+            # Use grid to arrange buttons in rows (one per row, centered)
+            row = index // max_buttons_per_row
+            col = index % max_buttons_per_row
+
+            # Place button in the grid
+            button.grid(row=row, column=col,rowspan=2 , padx=10, pady=10, sticky="nsew")
+            
+        # Update column configuration based on the maximum buttons per row
+        for col in range(max_buttons_per_row):
+            self.button_frame.grid_columnconfigure(col, weight=1)
+
+        # Update row configuration
+        # num_rows = (len(self.classes) + max_buttons_per_row - 1) // max_buttons_per_row
+        # for row in range(num_rows):
+        #     self.button_frame.grid_rowconfigure(row, weight=1)
+
+
+
+class CursorUtility:
+    @staticmethod
+    def on_enter(event):
+        event.widget.config(cursor="hand2")
+
+    @staticmethod
+    def on_leave(event):
+        event.widget.config(cursor="")
+
+    def on_load(event):
+        event.set_cursor(event.widget, "watch")
 
 def main():
+    global root
     root = Tk()
     root.title("Class GUI")
     frame = MainView(root)
     frame.pack(side="top", fill="both", expand=True)
     # add menubar
     root.configure(menu=frame.get_menubar())
+    # Set the window size to screen size, but in windowed mode
+    root.state("zoomed")
     # resize
-    #root.geometry('800x500')
+    root.geometry('800x500')
     root.mainloop()
+
     # root = Tk()
     # frm = ttk.Frame(root, padding=10)
     # frm.grid()
@@ -260,4 +417,22 @@ def main():
     # Checkbutton(frm, text="female", variable=var2).grid(row=4, sticky=W)
     # root.mainloop()
 
+
+conn = sqlite3.connect("example.db")
+cur = conn.cursor()
+cur.execute("""
+CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT NULL,
+    class_id INTEGER NOT NULL
+)
+""")
+cur.execute("""
+CREATE TABLE IF NOT EXISTS class (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    class_code TEXT NULL
+)
+""")
+conn.commit()
 main()
