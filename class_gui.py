@@ -5,6 +5,7 @@ import datetime
 import os
 import sqlite3
 import csv
+from functools import partial
 import logging
 
 def print_vars():
@@ -345,7 +346,7 @@ class MainView(ttk.Frame):
             self.button_frame.grid_rowconfigure(row, weight=0)  # Set row weight to 0 to prevent expansion
 
         for index, item in enumerate(self.classes):
-            button = ttk.Button(self.button_frame, text=item[0], style='TButton')
+            button = ttk.Button(self.button_frame, text=item[0], style='TButton',command=partial(show_frame, "DetailClass", item[0]))
             button.bind("<Enter>", CursorUtility.on_enter)
             button.bind("<Leave>", CursorUtility.on_leave)
 
@@ -366,6 +367,9 @@ class MainView(ttk.Frame):
         #     self.button_frame.grid_rowconfigure(row, weight=1)
 
 
+class DetailClass(ttk.Frame):
+    def __init__(self, *args, **kwargs):
+        ttk.Frame.__init__(self, *args, **kwargs)
 
 class CursorUtility:
     @staticmethod
@@ -379,14 +383,43 @@ class CursorUtility:
     def on_load(event):
         event.set_cursor(event.widget, "watch")
 
+def show_frame(frame_name,*args):
+    frame = frames[frame_name]
+
+    frame.tkraise()
+
+
 def main():
     global root
+    global frames
+
     root = Tk()
     root.title("Class GUI")
-    frame = MainView(root)
-    frame.pack(side="top", fill="both", expand=True)
+    # frame = MainView(root)
+    # frame.pack(side="top", fill="both", expand=True)
+
+    frames = {}
+    container = ttk.Frame(root)
+    container.pack(side="top", fill="both", expand=True)
+
+    # Initialize frames and add them to the container
+    frames = {}
+    frames["MainView"] = MainView(container)
+    frames["GeneralPage"] = DetailClass(container)
+
+    # Pack frames into the container (or grid)
+    for frame in frames.values():
+        frame.grid(row=0, column=0, sticky="nsew")
+
+    # Configure the container to allow frames to expand
+    container.grid_rowconfigure(0, weight=1)  # Allow row 0 to expand
+    container.grid_columnconfigure(0, weight=1)  # Allow column 0 to expand
+
+    # Show the initial frame
+    show_frame("MainView")
+    
     # add menubar
-    root.configure(menu=frame.get_menubar())
+    root.configure(menu=frames["MainView"].get_menubar())
     # Set the window size to screen size, but in windowed mode
     root.state("zoomed")
     # resize
@@ -418,6 +451,9 @@ def main():
     # root.mainloop()
 
 
+def change_frame(frame_name, *args):
+    pass
+
 conn = sqlite3.connect("example.db")
 cur = conn.cursor()
 cur.execute("""
@@ -435,4 +471,6 @@ CREATE TABLE IF NOT EXISTS class (
 )
 """)
 conn.commit()
-main()
+
+if __name__ == "__main__":
+    main()
